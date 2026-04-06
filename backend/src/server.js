@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import userRoutes from './routes/userRoutes.js';
+import orderRoutes from './routes/orderRoutes.js';
 
 
 // Load environment variables
@@ -26,6 +27,10 @@ app.use('/api/products', productRoutes);
 
 // Mount User routes
 app.use('/api/users', userRoutes);
+
+// Mount Order routes
+app.use('/api/orders', orderRoutes);
+
 
 
 // Basic Test Route
