@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import userRoutes from './routes/userRoutes.js';
+
 
 // Load environment variables
 dotenv.config();
@@ -21,6 +23,10 @@ app.use(express.json());
 
 // Mount our Product routes
 app.use('/api/products', productRoutes); 
+
+// Mount User routes
+app.use('/api/users', userRoutes);
+
 
 // Basic Test Route
 app.get('/', (req, res) => {
