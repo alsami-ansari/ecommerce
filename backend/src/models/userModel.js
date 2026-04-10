@@ -7,11 +7,14 @@ const userSchema = mongoose.Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     isAdmin: { type: Boolean, required: true, default: false },
+    // --> Add this new field:
+    wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
   },
   {
     timestamps: true,
   }
 );
+
 
 // Method to compare entered password with the hashed password in the DB
 userSchema.methods.matchPassword = async function (enteredPassword) {
@@ -19,16 +22,15 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 // Before saving a new user to the DB, hash the password
-userSchema.pre('save', async function (next) {
-  // If password is not modified, move on to the next step
+userSchema.pre('save', async function () {      // <-- Removed 'next'
   if (!this.isModified('password')) {
-    next();
+    return;                                     // <-- Replaced next() with return; to exit safely
   }
-
-  // Hash the password with a "salt" of 10 rounds
+  
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(String(this.password), salt);
 });
+
 
 const User = mongoose.model('User', userSchema);
 

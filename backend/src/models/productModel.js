@@ -5,12 +5,14 @@ const reviewSchema = mongoose.Schema(
     name: { type: String, required: true },
     rating: { type: Number, required: true },
     comment: { type: String, required: true },
-    // Later we will link this to the specific User who made the review
+    // --> Add this new line:
+    user: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
   },
   {
     timestamps: true,
   }
 );
+
 
 const productSchema = mongoose.Schema(
   {

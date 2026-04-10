@@ -3,6 +3,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import userRoutes from './routes/userRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
+import wishlistRoutes from './routes/wishlistRoutes.js';
+import couponRoutes from './routes/couponRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+
+
+
 
 
 // Load environment variables
@@ -15,6 +24,18 @@ connectDB();
 
 // Initialize our Express app
 const app = express();
+
+// 1. Helmet helps secure Express apps by setting various HTTP headers
+app.use(helmet());
+
+// 2. Limit repeated requests to prevent DDoS attacks
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per 15 mins
+  message: 'Too many requests from this IP, please try again in 15 minutes'
+});
+app.use(limiter);
+
 
 // Middleware
 // cors() allows our React frontend to communicate with this backend without security errors.
@@ -30,6 +51,16 @@ app.use('/api/users', userRoutes);
 
 // Mount Order routes
 app.use('/api/orders', orderRoutes);
+
+app.use('/api/wishlist', wishlistRoutes);
+
+app.use('/api/coupons', couponRoutes);
+
+app.use('/api/admin', adminRoutes);
+
+// These must be the VERY LAST middlewares we use before app.listen!
+app.use(notFound);
+app.use(errorHandler);
 
 
 
