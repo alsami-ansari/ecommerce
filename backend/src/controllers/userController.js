@@ -1,5 +1,8 @@
 import User from '../models/userModel.js';
 import generateToken from '../utils/generateToken.js';
+import sendEmail from '../utils/sendEmail.js';
+import { welcomeEmailTemplate } from '../utils/emailTemplates.js';
+
 
 // @desc    Auth user & get token (Login)
 // @route   POST /api/users/login
@@ -56,6 +59,14 @@ export const registerUser = async (req, res) => {
         isAdmin: user.isAdmin,
         token: generateToken(user._id),
       });
+
+      // 4. Send the Welcome Email (We do this AFTER saving the user)
+       sendEmail({
+        email: user.email,
+        subject: 'Welcome to Our Store! 🎉',
+        message: welcomeEmailTemplate(user.name), // Pass the name for personalization
+      });
+
     } else {
       res.status(400).json({ message: 'Invalid user data' });
     }

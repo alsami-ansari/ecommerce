@@ -9,6 +9,11 @@ import adminRoutes from './routes/adminRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+import path from 'path'; // A built-in Node package for file paths
+import uploadRoutes from './routes/uploadRoutes.js';
+import morgan from 'morgan';
+
+
 
 
 
@@ -24,6 +29,11 @@ connectDB();
 
 // Initialize our Express app
 const app = express();
+// This logs incoming traffic to your terminal!
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+}
+
 
 // 1. Helmet helps secure Express apps by setting various HTTP headers
 app.use(helmet());
@@ -57,6 +67,13 @@ app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/coupons', couponRoutes);
 
 app.use('/api/admin', adminRoutes);
+
+app.use('/api/upload', uploadRoutes);
+
+// Make the uploads folder publicly accessible
+const __dirname = path.resolve();
+app.use('/uploads', express.static(path.join(__dirname, '/uploads')));
+
 
 // These must be the VERY LAST middlewares we use before app.listen!
 app.use(notFound);

@@ -32,11 +32,31 @@ export const getProducts = async (req, res) => {
     delete priceFilters.keyword;
     delete priceFilters.category;
 
+    delete priceFilters.page;
+    delete priceFilters.limit;
+
+
     // 4. Combine all the rules into one massive database search query!
     const query = { ...keyword, ...category, ...priceFilters };
 
-    const products = await Product.find(query);
-    res.json(products);
+      // 5. Pagination System
+    const page = Number(req.query.page) || 1; // What page are they on? Default to 1
+    const limit = Number(req.query.limit) || 10; // Number of products per page
+    const skipAmount = (page - 1) * limit;
+
+    // Count how many total products match the query
+    const count = await Product.countDocuments(query);
+    
+    // Fetch the products, skipping the ones from previous pages!
+    const products = await Product.find(query).limit(limit).skip(skipAmount);
+
+    // Send the products AND the pagination math data back to the frontend
+    res.json({ 
+      products, 
+      page, 
+      pages: Math.ceil(count / limit) // Calculate total pages (e.g. 23 items / 10 = 3 pages)
+    });
+
   } catch (error) {
     res.status(500).json({ message: 'Error fetching products', error: error.message });
   }

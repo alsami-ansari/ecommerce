@@ -1,4 +1,7 @@
 import Order from '../models/orderModel.js';
+import Coupon from '../models/couponModel.js';
+import crypto from 'crypto';
+
 
 // @desc    Create a new order from a shopping cart
 // @route   POST /api/orders
@@ -6,39 +9,58 @@ import Order from '../models/orderModel.js';
 export const addOrderItems = async (req, res) => {
   try {
     const { 
-      orderItems, 
-      shippingAddress, 
-      paymentMethod, 
-      itemsPrice, 
-      taxPrice, 
-      shippingPrice, 
-      totalPrice 
+      orderItems, shippingAddress, paymentMethod, 
+      itemsPrice, taxPrice, shippingPrice, totalPrice,
+      couponCode // <-- NEW: Catch the coupon code from the frontend request
     } = req.body;
 
-    // Check if the cart is empty
     if (orderItems && orderItems.length === 0) {
       return res.status(400).json({ message: 'No items in cart' });
-    } else {
-      // Create a new order object mapped to the logged-in user
-      const order = new Order({
-        orderItems,
-        user: req.user._id, // This comes from our 'protect' middleware!
-        shippingAddress,
-        paymentMethod,
-        itemsPrice,
-        taxPrice,
-        shippingPrice,
-        totalPrice,
-      });
-
-      // Save it to MongoDB
-      const createdOrder = await order.save();
-      res.status(201).json(createdOrder);
     }
+
+    let finalPrice = Number(totalPrice);
+    let discountApplied = 0;
+
+    // IMPORTANT LOGIC: If the user provided a coupon code at checkout, verify and apply it!
+    if (couponCode) {
+      const dbCoupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
+
+      // Verify the coupon is real, not expired, and meets the minimum order value
+      if (dbCoupon && new Date(dbCoupon.expiryDate) > new Date() && finalPrice >= dbCoupon.minOrderValue) {
+        if (dbCoupon.discountType === 'percentage') {
+          discountApplied = (finalPrice * dbCoupon.discountValue) / 100;
+        } else {
+          discountApplied = dbCoupon.discountValue;
+        }
+        
+        // Subtract the discount from the total price
+        finalPrice = finalPrice - discountApplied;
+      }
+    }
+
+    // Create a new order object mapped to the logged-in user
+    const order = new Order({
+      orderItems,
+      user: req.user._id,
+      shippingAddress,
+      paymentMethod,
+      itemsPrice,
+      taxPrice,
+      shippingPrice,
+      totalPrice: finalPrice,          // Check this out: We save the new discounted price!
+      couponCode: couponCode || null,  // Save the code they used
+      discountAmount: discountApplied  // Save exactly how much money they saved
+    });
+
+    // Save it to MongoDB
+    const createdOrder = await order.save();
+    res.status(201).json(createdOrder);
+    
   } catch (error) {
     res.status(500).json({ message: 'Server error trying to create order', error: error.message });
   }
 };
+
 
 // @desc    Get an order by its ID
 // @route   GET /api/orders/:id
@@ -74,29 +96,56 @@ export const getMyOrders = async (req, res) => {
 // @desc    Update order to paid once Payment Gateway confirms success
 // @route   PUT /api/orders/:id/pay
 // @access  Private
+// @desc    Update order to paid (SECURE VERIFICATION)
+// @route   PUT /api/orders/:id/pay
+// @access  Private
 export const updateOrderToPaid = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
 
     if (order) {
-      order.isPaid = true;
-      order.paidAt = Date.now();
-      
-      // These details will be sent from Razorpay/Stripe from the frontend
-      order.paymentResult = {
-        id: req.body.id,
-        status: req.body.status,
-        update_time: req.body.update_time,
-        email_address: req.body.email_address,
-      };
+      // 1. Grab the exact data Razorpay sends back
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-      const updatedOrder = await order.save();
-      res.json(updatedOrder);
+      // 2. We combine the order ID and payment ID
+      const body = razorpay_order_id + "|" + razorpay_payment_id;
+
+      // 3. We hash it ourselves using our SECRET KEY that nobody else knows
+      // Note: We use 'test_secret' as a fallback until you get your real Razorpay account
+      const secretKey = process.env.RAZORPAY_KEY_SECRET || 'test_secret'; 
+
+      const expectedSignature = crypto
+        .createHmac('sha256', secretKey)
+        .update(body.toString())
+        .digest('hex');
+
+      // 4. CHECK IF THEY MATCH!
+      if (expectedSignature === razorpay_signature) {
+        
+        // It's mathematically proven to be real. Mark as paid!
+        order.isPaid = true;
+        order.paidAt = Date.now();
+        
+        order.paymentResult = {
+          id: razorpay_payment_id,
+          status: 'COMPLETED',
+          update_time: Date.now(),
+          email_address: req.user.email, // Log who paid for it
+        };
+
+        const updatedOrder = await order.save();
+        res.json(updatedOrder);
+
+      } else {
+        // Fraud detected!
+        res.status(400).json({ message: 'Fake Payment Signature Detected! Fraud Alert.' });
+      }
+
     } else {
       res.status(404).json({ message: 'Order not found' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'Server error updating payment status' });
+    res.status(500).json({ message: 'Server error updating payment status', error: error.message });
   }
 };
 
