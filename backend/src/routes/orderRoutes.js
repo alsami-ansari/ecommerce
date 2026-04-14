@@ -1,7 +1,8 @@
 import express from 'express';
-import { addOrderItems, getOrderById, getMyOrders, updateOrderToPaid } from '../controllers/orderController.js';
+import { addOrderItems, getOrderById, getMyOrders, updateOrderToPaid, createRazorpayOrder } from '../controllers/orderController.js';
 // We need the security guard to make sure only logged-in users can place and view orders!
 import { protect } from '../middleware/authMiddleware.js';
+
 
 const router = express.Router();
 
@@ -17,6 +18,10 @@ router.get('/:id', protect, getOrderById);
 
 // When someone sends a PUT request here, update the payment status!
 router.put('/:id/pay', protect, updateOrderToPaid);
+
+// When the frontend needs to open the popup, it hits this!
+router.post('/:id/razorpay', protect, createRazorpayOrder);
+
 
 
 export default router;

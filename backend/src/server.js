@@ -86,6 +86,12 @@ app.get('/', (req, res) => {
   res.send('Ecommerce API is running!');
 });
 
+// Provide the public Razorpay Key ID to the React Frontend
+app.get('/api/config/razorpay', (req, res) =>
+  res.send(process.env.RAZORPAY_KEY_ID)
+);
+
+
 // Define the port our server will run on
 const PORT = process.env.PORT || 5000;
 

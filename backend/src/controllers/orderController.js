@@ -1,6 +1,9 @@
 import Order from '../models/orderModel.js';
 import Coupon from '../models/couponModel.js';
 import crypto from 'crypto';
+import Razorpay from 'razorpay';
+
+
 
 
 // @desc    Create a new order from a shopping cart
@@ -60,6 +63,7 @@ export const addOrderItems = async (req, res) => {
     res.status(500).json({ message: 'Server error trying to create order', error: error.message });
   }
 };
+
 
 
 // @desc    Get an order by its ID
@@ -148,4 +152,40 @@ export const updateOrderToPaid = async (req, res) => {
     res.status(500).json({ message: 'Server error updating payment status', error: error.message });
   }
 };
+
+// @desc    Initialize a Razorpay Payment Session
+// @route   POST /api/orders/:id/razorpay
+// @access  Private
+export const createRazorpayOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // 1. Connect to Razorpay
+    const instance = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+
+    // 2. Build the order rules. Razorpay requires amounts in the smallest currency unit (like Paise or Cents)
+    const options = {
+      amount: Math.round(order.totalPrice * 100), // Multiply by 100 to convert to paise!
+      currency: "INR", // Change to USD if dealing with dollars
+      receipt: `receipt_${order._id}`,
+    };
+
+    // 3. Ask Razorpay to securely generate the ID
+    const razorpayOrder = await instance.orders.create(options);
+    
+    // 4. Send that ID to the frontend!
+    res.json(razorpayOrder);
+    
+  } catch (error) {
+    res.status(500).json({ message: 'Error generating Razorpay Order', error: error.message });
+  }
+};
+
 
