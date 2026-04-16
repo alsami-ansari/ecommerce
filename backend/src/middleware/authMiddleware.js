@@ -10,13 +10,13 @@ export const protect = async (req, res, next) => {
     try {
       // Get token from header (it looks like "Bearer eyJhbGciOi...")
       token = req.headers.authorization.split(' ')[1];
-
+  
       // Decode the token using our secret key
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       // Fetch the user from the DB using the decoded ID, and attach it to the request object
       // We use .select('-password') to make sure we don't accidentally expose the hashed password
-      req.user = await User.findById(decoded.id).select('-password');
+      req.user = await User.findById(decoded.userId).select('-password');
 
       next(); // Move on to the controller function
     } catch (error) {

@@ -1,10 +1,11 @@
 import express from 'express';
 // We added getUserProfile here:
-import { authUser, registerUser, getUserProfile } from '../controllers/userController.js';
+import { authUser, registerUser, getUserProfile, forgotPassword, resetPassword } from '../controllers/userController.js';
 // We imported the protect middleware here:
 import { protect } from '../middleware/authMiddleware.js';
 import { check } from 'express-validator';
 import { runValidation } from '../middleware/validationMiddleware.js';
+
 
 
 const router = express.Router();
@@ -32,6 +33,9 @@ router.post(
   registerUser   // Finally run the controller
 );
 
+// Password Reset Flows
+router.post('/forgotpassword', forgotPassword);
+router.put('/resetpassword/:resetToken', resetPassword);
 
 
 // Notice we put `protect` in the middle! It intercepts the request before reaching getUserProfile

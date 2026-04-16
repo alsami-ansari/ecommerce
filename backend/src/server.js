@@ -12,6 +12,8 @@ import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 import path from 'path'; // A built-in Node package for file paths
 import uploadRoutes from './routes/uploadRoutes.js';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+
 
 
 
@@ -29,29 +31,38 @@ connectDB();
 
 // Initialize our Express app
 const app = express();
+
 // This logs incoming traffic to your terminal!
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
 
+// ==========================================
+// ENTERPRISE SECURITY SHIELDS
+// ==========================================
+// Built-in body parser
+app.use(express.json());
+
+// Read heavily encrypted cookies sent from the browser
+app.use(cookieParser());
+
 // 1. Helmet helps secure Express apps by setting various HTTP headers
 app.use(helmet());
 
-// 2. Limit repeated requests to prevent DDoS attacks
+// 2. Rate Limiting to stop DDoS Attacks!
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per 15 mins
-  message: 'Too many requests from this IP, please try again in 15 minutes'
+  max: 100, // limit each IP to 100 requests per windowMs
 });
-app.use(limiter);
+app.use('/api', limiter);
 
 
-// Middleware
-// cors() allows our React frontend to communicate with this backend without security errors.
-app.use(cors()); 
-// json() allows us to access incoming data formatted as JSON (like form submissions)
-app.use(express.json()); 
+// 6. Enable secure CORS for React
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true // MANDATORY for cookies to work!
+}));
 
 // Mount our Product routes
 app.use('/api/products', productRoutes); 

@@ -1,11 +1,49 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+// Mini-schema for saving multiple shipping addresses
+const addressSchema = mongoose.Schema({
+  fullName: { type: String },
+  phone: { type: String },
+  street: { type: String },
+  city: { type: String },
+  state: { type: String },
+  postalCode: { type: String },
+  country: { type: String },
+  isDefault: { type: Boolean, default: false }
+});
+
 
 const userSchema = mongoose.Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+        // ==========================================
+    // ENTERPRISE UPGRADES
+    // ==========================================
+    // 1. Role Based Access Control (RBAC)
+    role: {
+      type: String,
+      enum: ['customer', 'admin', 'manager', 'support'],
+      default: 'customer'
+    },
+    
+    // 2. Address Book
+    addresses: [addressSchema],
+    
+    // 3. Advanced Security & Account Locking
+    refreshTokens: [String], // Array to keep track of logged-in devices
+    loginAttempts: { type: Number, default: 0 },
+    lockUntil: { type: Date },
+
+    // 4. Password & Email Verification Flows
+    isEmailVerified: { type: Boolean, default: false },
+    emailVerificationToken: String,
+    emailVerificationExpires: Date,
+    resetPasswordToken: String,
+    resetPasswordExpires: Date,
+    // ==========================================
+
     isAdmin: { type: Boolean, required: true, default: false },
     // --> Add this new field:
     wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
