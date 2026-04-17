@@ -10,52 +10,38 @@ export const getProducts = async (req, res) => {
   try {
     // 1. Check for a search keyword (e.g. ?keyword=phone).
     // We use $regex so that searching "phone" matches "iPhone 14 Pro"
-    const keyword = req.query.keyword
-      ? {
-          name: {
-            $regex: req.query.keyword,
-            $options: 'i', // 'i' makes it case-insensitive (Phone = phone)
-          },
-        }
-      : {};
+      // 1. Enterprise Fix: ALWAYS require isDeleted to be false for public searches
+  const keyword = req.query.keyword
+    ? {
+        name: { $regex: req.query.keyword, $options: 'i' },
+        isDeleted: false 
+      }
+    : { isDeleted: false };
 
-    // 2. Check for a specific category (e.g. ?category=Electronics)
-    const category = req.query.category ? { category: req.query.category } : {};
-
-    // 3. Check for price filters (e.g. ?price[lte]=500)
-    // We convert the incoming query like 'lte' into MongoDB's format '$lte'
-    let filterQuery = JSON.stringify(req.query);
-    filterQuery = filterQuery.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
-    let priceFilters = JSON.parse(filterQuery);
-
-    // Clean out the keyword and category from priceFilters so they don't clash
-    delete priceFilters.keyword;
-    delete priceFilters.category;
-
-    delete priceFilters.page;
-    delete priceFilters.limit;
+  const filter = {};
+  if (req.query.category) {
+    filter.category = req.query.category;
+  }
 
 
-    // 4. Combine all the rules into one massive database search query!
-    const query = { ...keyword, ...category, ...priceFilters };
 
-      // 5. Pagination System
-    const page = Number(req.query.page) || 1; // What page are they on? Default to 1
-    const limit = Number(req.query.limit) || 10; // Number of products per page
-    const skipAmount = (page - 1) * limit;
+  // Add these two lines back in!
+  const pageSize = Number(req.query.limit) || 10;
+  const page = Number(req.query.page) || 1;
 
-    // Count how many total products match the query
-    const count = await Product.countDocuments(query);
-    
-    // Fetch the products, skipping the ones from previous pages!
-    const products = await Product.find(query).limit(limit).skip(skipAmount);
+  const count = await Product.countDocuments({ ...keyword, ...filter });
 
-    // Send the products AND the pagination math data back to the frontend
+  const products = await Product.find({ ...keyword, ...filter })
+    .populate('category', 'name slug') 
+    .limit(pageSize)
+    .skip(pageSize * (page - 1));
+
     res.json({ 
-      products, 
-      page, 
-      pages: Math.ceil(count / limit) // Calculate total pages (e.g. 23 items / 10 = 3 pages)
+        products, 
+        page, 
+        pages: Math.ceil(count / pageSize) // Change 'limit' to 'pageSize' here!
     });
+
 
   } catch (error) {
     res.status(500).json({ message: 'Error fetching products', error: error.message });
@@ -68,18 +54,21 @@ export const getProducts = async (req, res) => {
 // @access  Public
 export const getProductById = async (req, res) => {
   try {
-    // req.params.id gets the ID from the URL (e.g. /api/products/12345)
-    const product = await Product.findById(req.params.id);
-    
-    if (product) {
+    // 3. Populate category data here too!
+    const product = await Product.findById(req.params.id)
+      .populate('category', 'name slug parentCategory');
+
+    // 4. Force a 404 Error if the product exists but is flagged as deleted!
+    if (product && !product.isDeleted) {
       res.json(product);
     } else {
-      res.status(404).json({ message: 'Product not found' });
+      res.status(404).json({ message: 'Product not found or has been removed' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching product', error: error.message });
+    res.status(500).json({ message: 'Server Error fetching product', error: error.message });
   }
 };
+
 
 // @desc    Create new review
 // @route   POST /api/products/:id/reviews
