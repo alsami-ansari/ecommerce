@@ -13,6 +13,7 @@ import path from 'path'; // A built-in Node package for file paths
 import uploadRoutes from './routes/uploadRoutes.js';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import cartRoutes from './routes/cartRoutes.js';
 
 
 
@@ -69,6 +70,9 @@ app.use('/api/products', productRoutes);
 
 // Mount User routes
 app.use('/api/users', userRoutes);
+
+// Mount Cart routes
+app.use('/api/cart', cartRoutes);
 
 // Mount Order routes
 app.use('/api/orders', orderRoutes);

@@ -2,6 +2,8 @@ import Order from '../models/orderModel.js';
 import Coupon from '../models/couponModel.js';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
+import Cart from '../models/cartModel.js';
+import Product from '../models/productModel.js';
 
 
 
@@ -9,61 +11,79 @@ import Razorpay from 'razorpay';
 // @desc    Create a new order from a shopping cart
 // @route   POST /api/orders
 // @access  Private (You must be logged in)
+// @desc    Create new order & Lock Physical Stock
+// @route   POST /api/orders
+// @access  Private
 export const addOrderItems = async (req, res) => {
   try {
-    const { 
-      orderItems, shippingAddress, paymentMethod, 
-      itemsPrice, taxPrice, shippingPrice, totalPrice,
-      couponCode // <-- NEW: Catch the coupon code from the frontend request
-    } = req.body;
-
-    if (orderItems && orderItems.length === 0) {
-      return res.status(400).json({ message: 'No items in cart' });
+    // Notice we ONLY ask the frontend for Shipping & Payment strings. 
+    // We do NOT ask the frontend for prices or quantities!
+    const { shippingAddress, paymentMethod } = req.body;
+    // 1. Secure Fetch: Pull the Cart directly from the Database
+    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({ message: 'Your cart is completely empty!' });
     }
+    // 2. Inventory Reservation Engine 
+    // We mathematically verify stock for EVERY item *before* creating the Order!
+    for (const item of cart.items) {
+      const dbProduct = item.product; // This is populated, so it holds the live database product!
 
-    let finalPrice = Number(totalPrice);
-    let discountApplied = 0;
-
-    // IMPORTANT LOGIC: If the user provided a coupon code at checkout, verify and apply it!
-    if (couponCode) {
-      const dbCoupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
-
-      // Verify the coupon is real, not expired, and meets the minimum order value
-      if (dbCoupon && new Date(dbCoupon.expiryDate) > new Date() && finalPrice >= dbCoupon.minOrderValue) {
-        if (dbCoupon.discountType === 'percentage') {
-          discountApplied = (finalPrice * dbCoupon.discountValue) / 100;
-        } else {
-          discountApplied = dbCoupon.discountValue;
-        }
-        
-        // Subtract the discount from the total price
-        finalPrice = finalPrice - discountApplied;
+      // Stock Check
+      if (item.quantity > dbProduct.countInStock) {
+        return res.status(400).json({
+          message: `Stock Reject! We only have ${dbProduct.countInStock} of ${dbProduct.name} remaining!`,
+          problemProduct: dbProduct.name
+        });
       }
     }
+    // 3. Stock Lock! If the code reaches here, all items had valid stock. 
+    // We now permanently decrement the physical supply in the database!
+    // 3. Stock Lock! If the code reaches here, all items had valid stock. 
+    // We use an Atomic Operation ($inc) to directly deduct the stock. 
+    // This perfectly prevents Race Conditions and mathematically bypasses full schema validation!
+    for (const item of cart.items) {
+      await Product.updateOne(
+        { _id: item.product._id },
+        { $inc: { countInStock: -item.quantity } }
+      );
+    }
 
-    // Create a new order object mapped to the logged-in user
+    // 4. Data Translation: Format the Cart items into the standard Order schema
+    const orderItems = cart.items.map((item) => ({
+      name: item.product.name,
+      quantity: item.quantity, // Renamed to 'quantity'
+      image: item.product.image,
+      price: item.price,
+      variantId: item.variantId,
+      product: item.product._id,
+    }));
+    // Calculate Taxes & Shipping (Mock Math)
+    const taxPrice = cart.totalPrice * 0.08; // 8% Tax
+    const shippingPrice = cart.totalPrice > 100 ? 0 : 15; // Free shipping over $100
+    // 5. Generate Official Order
     const order = new Order({
-      orderItems,
       user: req.user._id,
+      orderItems,
       shippingAddress,
       paymentMethod,
-      itemsPrice,
-      taxPrice,
+      itemsPrice: cart.totalPrice,
+      taxPrice: Number(taxPrice.toFixed(2)),
       shippingPrice,
-      totalPrice: finalPrice,          // Check this out: We save the new discounted price!
-      couponCode: couponCode || null,  // Save the code they used
-      discountAmount: discountApplied  // Save exactly how much money they saved
+      totalPrice: Number((cart.totalPrice + taxPrice + shippingPrice).toFixed(2)),
+      orderStatus: 'Pending' // Initiates the Logistics State Machine!
     });
-
-    // Save it to MongoDB
     const createdOrder = await order.save();
+    // 6. Housekeeping: Completely destroy their Database Cart since the Order was captured!
+    cart.items = [];
+    cart.totalPrice = 0;
+    await cart.save();
+    // Success! Return the new order to the frontend
     res.status(201).json(createdOrder);
-    
   } catch (error) {
-    res.status(500).json({ message: 'Server error trying to create order', error: error.message });
+    res.status(500).json({ message: 'Error generating order', error: error.message });
   }
 };
-
 
 
 // @desc    Get an order by its ID
@@ -116,7 +136,7 @@ export const updateOrderToPaid = async (req, res) => {
 
       // 3. We hash it ourselves using our SECRET KEY that nobody else knows
       // Note: We use 'test_secret' as a fallback until you get your real Razorpay account
-      const secretKey = process.env.RAZORPAY_KEY_SECRET || 'test_secret'; 
+      const secretKey = process.env.RAZORPAY_KEY_SECRET || 'test_secret';
 
       const expectedSignature = crypto
         .createHmac('sha256', secretKey)
@@ -125,11 +145,11 @@ export const updateOrderToPaid = async (req, res) => {
 
       // 4. CHECK IF THEY MATCH!
       if (expectedSignature === razorpay_signature) {
-        
+
         // It's mathematically proven to be real. Mark as paid!
         order.isPaid = true;
         order.paidAt = Date.now();
-        
+
         order.paymentResult = {
           id: razorpay_payment_id,
           status: 'COMPLETED',
@@ -159,7 +179,7 @@ export const updateOrderToPaid = async (req, res) => {
 export const createRazorpayOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
-    
+
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -179,10 +199,10 @@ export const createRazorpayOrder = async (req, res) => {
 
     // 3. Ask Razorpay to securely generate the ID
     const razorpayOrder = await instance.orders.create(options);
-    
+
     // 4. Send that ID to the frontend!
     res.json(razorpayOrder);
-    
+
   } catch (error) {
     res.status(500).json({ message: 'Error generating Razorpay Order', error: error.message });
   }

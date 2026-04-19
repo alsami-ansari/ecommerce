@@ -15,7 +15,7 @@ export const authUser = async (req, res) => {
     const user = await User.findOne({ email });
 
     // Check if user exists & if password matches
-       if (user && (await user.matchPassword(password))) {
+    if (user && (await user.matchPassword(password))) {
       // 1. Generate both tokens and automatically attach the encrypted Cookie!
       const { accessToken, refreshToken } = generateToken(res, user._id);
 
@@ -62,10 +62,10 @@ export const registerUser = async (req, res) => {
       password,
     });
 
-        if (user) {
+    if (user) {
       // 1. Generate the same tokens!
       const { accessToken, refreshToken } = generateToken(res, user._id);
-      
+
       // 2. Save it to the database
       user.refreshTokens.push(refreshToken);
       await user.save();
@@ -132,12 +132,12 @@ export const forgotPassword = async (req, res) => {
     // 2. Hash it and save it to the database (so we can compare it later)
     user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // Expires in Exactly 15 Minutes
-    
+
     await user.save();
 
     // 3. Send the Magic Link via Email
     const resetUrl = `http://localhost:5000/reset-password/${resetToken}`;
-    
+
     sendEmail({
       email: user.email,
       subject: 'Password Reset Request',
