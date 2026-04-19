@@ -209,3 +209,120 @@ export const createRazorpayOrder = async (req, res) => {
 };
 
 
+// @desc    Update Order Status & Reverse Inventory on Cancellation
+// @route   PUT /api/orders/:id/status
+// @access  Private/Admin
+export const updateOrderStatus = async (req, res) => {
+  try {
+    // The Admin frontend will send us an action string (e.g., "Shipped" or "Cancelled")
+    const { status } = req.body;
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Enterprise Protection: A hacker Admin shouldn't be able to refund an already refunded order and accidentally double our stock!
+    if (['Cancelled', 'Refunded'].includes(order.orderStatus)) {
+      return res.status(400).json({ message: 'This order has already been physically closed and refunded.' });
+    }
+
+    // 1. Update the official Status 
+    // (This automatically triggers our Mongoose Trap from yesterday, silently injecting a timestamp!)
+    order.orderStatus = status;
+
+    // 2. The Reverse Inventory Engine!
+    // If the Admin clicked "Cancel", we MUST physically return the iPhones back to the digital warehouse!
+    if (status === 'Cancelled' || status === 'Refunded') {
+      for (const item of order.orderItems) {
+        // We use the exact same Atomic Operation ($inc) as yesterday, but with a Plus sign (+) to restore stock!
+        await Product.updateOne(
+          { _id: item.product },
+          { $inc: { countInStock: +item.quantity } } 
+        );
+      }
+    }
+    
+    // Legacy support: If the status is Delivered, also satisfy the old booleans
+    if (status === 'Delivered') {
+      order.isDelivered = true;
+      order.deliveredAt = Date.now();
+    }
+
+    const updatedOrder = await order.save();
+    
+    // Send the freshly updated tracking object back to the Admin Dashboard
+    res.json(updatedOrder);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error updating status', error: error.message });
+  }
+};
+
+// @desc    Razorpay Server-to-Server Webhook Listener
+// @route   POST /api/orders/webhook
+// @access  Public (Directly from Razorpay)
+export const razorpayWebhook = async (req, res) => {
+  try {
+    // 1. Get the signature from Razorpay's headers
+    const signature = req.headers['x-razorpay-signature'];
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'test_webhook_secret';
+
+    if (!signature) {
+      return res.status(400).send('Webhook Signature missing');
+    }
+
+    // 2. Validate the signature mathematically
+    const bodyString = JSON.stringify(req.body);
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(bodyString)
+      .digest('hex');
+
+    if (expectedSignature !== signature) {
+      return res.status(400).send('Invalid Signature');
+    }
+
+    // 3. Process the Event
+    const event = req.body;
+
+    // Listen for the specific payment success event
+    if (event.event === 'order.paid' || event.event === 'payment.captured') {
+      const paymentEntity = event.payload.payment.entity;
+      
+      // Extract the order ID from the receipt string we sent earlier
+      // It is usually hidden under event.payload.order.entity.receipt
+      const receipt = event.payload?.order?.entity?.receipt || paymentEntity.notes?.receipt;
+
+      if (receipt && receipt.startsWith('receipt_')) {
+        const orderId = receipt.split('_')[1];
+        
+        const order = await Order.findById(orderId);
+        
+        if (order && !order.isPaid) {
+          // It's a genuine background payment confirmation! Update DB!
+          order.isPaid = true;
+          order.paidAt = Date.now();
+          order.orderStatus = 'Confirmed';
+          
+          order.paymentResult = {
+            id: paymentEntity.id,
+            status: 'COMPLETED',
+            update_time: Date.now(),
+            email_address: paymentEntity.email,
+          };
+          
+          // Trigger the state machine
+          await order.save();
+          console.log(`[Webhook] Trust verified. Order ${orderId} successfully marked Confirmed offline!`);
+        }
+      }
+    }
+
+    // Always respond 200 OK so Razorpay knows we didn't crash
+    res.status(200).send('Webhook Processed');
+
+  } catch (error) {
+    console.error('Webhook Error:', error.message);
+    res.status(500).send('Webhook execution error');
+  }
+};

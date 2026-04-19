@@ -1,7 +1,17 @@
 import express from 'express';
-import { addOrderItems, getOrderById, getMyOrders, updateOrderToPaid, createRazorpayOrder } from '../controllers/orderController.js';
+import {
+  addOrderItems,
+  getOrderById,
+  updateOrderToPaid,
+  getMyOrders,
+  createRazorpayOrder,
+  razorpayWebhook, // (Your existing webhook)
+  updateOrderStatus // <-- NEW: Import the Admin function!
+} from '../controllers/orderController.js';
+
 // We need the security guard to make sure only logged-in users can place and view orders!
-import { protect } from '../middleware/authMiddleware.js';
+// Also importing 'admin' so we can protect the dashboard routes
+import { protect, admin } from '../middleware/authMiddleware.js';
 
 
 const router = express.Router();
@@ -22,6 +32,12 @@ router.put('/:id/pay', protect, updateOrderToPaid);
 // When the frontend needs to open the popup, it hits this!
 router.post('/:id/razorpay', protect, createRazorpayOrder);
 
+// ==========================================
+// ADMIN DASHBOARD ROUTES
+// ==========================================
+
+// @desc    Update logistics status (Shipped, Cancelled, Delivered)
+router.put('/:id/status', protect, admin, updateOrderStatus);
 
 
 export default router;
