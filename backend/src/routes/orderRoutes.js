@@ -5,9 +5,11 @@ import {
   updateOrderToPaid,
   getMyOrders,
   createRazorpayOrder,
-  razorpayWebhook, // (Your existing webhook)
-  updateOrderStatus // <-- NEW: Import the Admin function!
+  razorpayWebhook, 
+  updateOrderStatus, 
+  getSalesDashboard // <-- NEW: Import the Analytics Engine
 } from '../controllers/orderController.js';
+
 
 // We need the security guard to make sure only logged-in users can place and view orders!
 // Also importing 'admin' so we can protect the dashboard routes
@@ -23,8 +25,22 @@ router.post('/', protect, addOrderItems);
 // (Important: place this route BEFORE the /:id route, otherwise Express thinks "myorders" is an ID)
 router.get('/myorders', protect, getMyOrders);
 
+
+// MUST be placed above /:id to prevent Express routing collisions!
+router.get('/analytics/dashboard', protect, admin, getSalesDashboard);
+
 // When a GET request is sent to /api/orders/:id, fetch that specific order
 router.get('/:id', protect, getOrderById);
+
+// ==========================================
+// ADMIN DASHBOARD ROUTES
+// ==========================================
+
+
+
+// Update logistics status (Shipped, Cancelled, Delivered)
+router.put('/:id/status', protect, admin, updateOrderStatus);
+
 
 // When someone sends a PUT request here, update the payment status!
 router.put('/:id/pay', protect, updateOrderToPaid);

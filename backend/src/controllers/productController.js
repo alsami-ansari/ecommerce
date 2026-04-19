@@ -1,4 +1,6 @@
 import Product from '../models/productModel.js';
+import Order from '../models/orderModel.js';
+
 
 // @desc    Fetch all products
 // @route   GET /api/products
@@ -96,6 +98,23 @@ export const createProductReview = async (req, res) => {
         comment,
         user: req.user._id,  // Grab ID from the token
       };
+     
+            // ==========================================
+      // Rule 1.5: THE ENTERPRISE TRUST GATEWAY
+      // We physically verify their database history to prove they bought this exact item!
+      // ==========================================
+      const hasBought = await Order.findOne({
+        user: req.user._id,
+        'orderItems.product': product._id,
+        isPaid: true
+      });
+
+      // The Bounce: Fake Reviewers get rejected here!
+      if (!hasBought) {
+        return res.status(400).json({ 
+          message: 'Trust Gateway Rejected: You must purchase and pay for this product before leaving a review.' 
+        });
+      }
 
       // Add the review to the product's array
       product.reviews.push(review);

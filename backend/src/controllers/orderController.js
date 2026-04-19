@@ -4,6 +4,8 @@ import crypto from 'crypto';
 import Razorpay from 'razorpay';
 import Cart from '../models/cartModel.js';
 import Product from '../models/productModel.js';
+import User from '../models/userModel.js';
+
 
 
 
@@ -324,5 +326,54 @@ export const razorpayWebhook = async (req, res) => {
   } catch (error) {
     console.error('Webhook Error:', error.message);
     res.status(500).send('Webhook execution error');
+  }
+};
+
+// @desc    Get Global Dashboard Analytics & Sales Data
+// @route   GET /api/orders/analytics/dashboard
+// @access  Private/Admin
+export const getSalesDashboard = async (req, res) => {
+  try {
+    // 1. The Global Crunch: Group ALL orders together (id: null) and mathematically sum the total price
+    const salesData = await Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalSales: { $sum: '$totalPrice' }, // Grabs the official checkout price
+        },
+      },
+    ]);
+
+    // 2. The User Count: Extremely fast raw count of registered accounts
+    const totalUsers = await User.countDocuments();
+
+    // 3. The Monthly Matrix: Group orders strictly by their chronological Month-Year (e.g., '2026-04')
+    const monthlySales = await Order.aggregate([
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          totalSales: { $sum: '$totalPrice' },
+          totalOrders: { $sum: 1 },
+        },
+      },
+      {
+        // Sort chronologically ascending so the frontend can graph Month 1 -> Month 12
+        $sort: { _id: 1 },
+      },
+    ]);
+
+    // Safety fallback: if there are literally zero orders in the database, prevent a 'Length of Undefined' crash
+    const globalCrunch = salesData.length > 0 ? salesData[0] : { totalOrders: 0, totalSales: 0 };
+
+    // Package the matrix and ship it to the Admin Frontend!
+    res.json({
+      totalUsers,
+      totalOrders: globalCrunch.totalOrders,
+      totalSales: globalCrunch.totalSales,
+      monthlySalesArray: monthlySales, // An array ready to plug into a Bar Chart!
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error crunching analytics', error: error.message });
   }
 };
